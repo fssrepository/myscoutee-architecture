@@ -1,0 +1,49 @@
+# Comparable cloud stacks and billing: AWS, Azure, Google Cloud and OCI
+
+**Status:** decision analysis, 27 October 2026. This is a pricing snapshot and an illustrative workload, not a MyScoutee migration plan or a measured production bill. Recheck the linked provider rates, region, currency, tax and contract before purchasing.
+
+## One workload, four self-managed stacks
+
+The like-for-like baseline is the packaged MyScoutee Compose application: nginx, Java API, MongoDB, Redis, MinIO, MCP and demo services on **one Linux VM**. Keep the same software, database ownership, backup policy and availability target on every provider. A managed database, Kubernetes cluster, CDN or load balancer would be a different architecture and needs its own comparison. The current Netcup setup remains the baseline in [the Netcup analysis](netcup-cloudflare-cloud.md).
+
+For a repeatable quote, ask each provider for a benchmark-matched **x86 VM around 4 vCPU and 16 GiB RAM**, 200 GiB of suitable persistent SSD, one public IPv4 address, 730 running hours, one month of measured backup retention and 1,000 GB of internet response traffic to European users. These are **illustrative inputs**, not measurements of MyScoutee's current demand. OCI x86 shapes count [one OCPU as two vCPUs](https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm), so a first OCI quote would use two OCPUs and 16 GiB, then compare benchmark results rather than CPU labels alone.
+
+| Layer | AWS | Azure | Google Cloud | OCI |
+| --- | --- | --- | --- | --- |
+| Same application | [EC2 Linux](https://aws.amazon.com/ec2/pricing/on-demand/) + Compose | [Linux VM](https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/) + Compose | [Compute Engine](https://cloud.google.com/products/compute/pricing) + Compose | [Flexible x86 VM](https://www.oracle.com/cloud/compute/faq/) + Compose |
+| Persistent data | [EBS gp3](https://aws.amazon.com/ebs/pricing/) + snapshots | [Managed Disk](https://azure.microsoft.com/en-us/pricing/details/managed-disks/) + snapshots/backup | [Persistent Disk](https://cloud.google.com/compute/disks-image-pricing) + snapshots | [Block Volume](https://www.oracle.com/cloud/price-list/) + backups |
+| Public entry | IPv4; Netcup DNS or Route 53; optional CloudFront/WAF | Public IP; Netcup DNS or Azure DNS; optional Front Door/WAF | External IPv4; Netcup DNS or Cloud DNS; optional CDN/Armor | Public IP; Netcup DNS or OCI DNS; optional load balancer/WAF |
+| Cost signature | VM time, EBS capacity/performance, IPv4 and egress billed separately | VM, disk SKU, public IP, egress and backup; Azure Backup can add two meters | VM, disk, IPv4 and egress; Premium/Standard routing changes transfer rate | OCPU and memory billed separately; Block Volume performance units; 10 TB outbound allowance |
+
+The application's MongoDB, Redis and MinIO containers remain on that VM in this comparison. Provider object storage or a Mongo-compatible API is not assumed to be a drop-in replacement. External Firebase calls still require working **outbound DNS and HTTPS**; moving authoritative DNS to the VM provider is not required for token refresh. Cloudflare can be evaluated in front of any of these origins for the **public** image route, while the private route remains uncached, as described in the [edge analysis](netcup-cloudflare-cloud.md#where-cloudflare-could-help-image-browsing).
+
+## Where the bill changes
+
+| Meter | AWS | Azure | Google Cloud | OCI |
+| --- | --- | --- | --- | --- |
+| Compute | EC2 instance time, with Linux partial hours billed per second after a 60-second minimum | VM size and running time; any licensed image/support may add cost | vCPU and memory/machine charges by second after a one-minute minimum | Flexible x86 shape bills OCPU-hours and memory GB-hours; standard-flex billing pauses when stopped |
+| Persistent disk | EBS gp3 provisioned GB; extra IOPS/throughput only above the included baseline | Managed Disk tier and capacity; Ultra/Premium v2 performance settings can add meters | Persistent Disk provisioned capacity; Hyperdisk can separately bill IOPS/throughput | Block Volume capacity and selected VPUs/performance |
+| Backup | EBS snapshot storage and any chosen backup orchestration | Snapshot storage or Azure Backup protected instance **plus** backup storage | Snapshot storage, with location/restore transfer possible | Block Volume backup/storage terms from the OCI quote |
+| Public IPv4 | [In-use and idle IPv4 addresses](https://aws.amazon.com/vpc/pricing/) have an hourly charge | [Static Public IP](https://azure.microsoft.com/en-us/pricing/details/ip-addresses/) is a separate SKU; check the exact allocation and lifecycle | [In-use and reserved external IPv4](https://cloud.google.com/vpc/network-pricing) have separate rates | Verify the selected public-IP and networking line in the regional quote rather than assuming parity |
+| Internet response bytes | First 100 GB/month free across eligible AWS services/regions, then region-specific transfer-out tiers | First 100 GB/month free; Europe Premium Global Network's next tier is priced per GB | Premium Tier defaults to destination-based GiB tiers; Standard Tier has a separate 200 GiB/month allowance and different routing | First 10 TB/month of public outbound transfer free in the published price list; price above that depends on source geography |
+| Authoritative public DNS | Route 53 hosted zone and public queries **if selected** | Azure DNS zone and queries **if selected** | Cloud DNS zone and queries **if selected** | OCI DNS terms **if selected**; retain Netcup authority for the baseline |
+| Edge/security | CloudFront, WAF or Shield Advanced only when chosen; Shield Standard has no additional fee | Front Door, WAF or enhanced DDoS plan only when chosen | Cloud CDN, load balancer or Cloud Armor only when chosen | Load balancer/WAF only when chosen; Cloudflare remains provider-independent |
+
+The billing descriptions are drawn from the linked official [AWS EC2](https://aws.amazon.com/ec2/pricing/on-demand/), [EBS](https://aws.amazon.com/ebs/pricing/) and [VPC](https://aws.amazon.com/vpc/pricing/) pages; [Azure VM](https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/), [disk](https://azure.microsoft.com/en-us/pricing/details/managed-disks/), [backup](https://azure.microsoft.com/en-us/pricing/details/backup/) and [bandwidth](https://azure.microsoft.com/en-us/pricing/details/bandwidth/) pages; [Google Compute](https://cloud.google.com/products/compute/pricing), [disk](https://cloud.google.com/compute/disks-image-pricing) and [network](https://cloud.google.com/vpc/network-pricing) pages; and the [OCI price list](https://www.oracle.com/cloud/price-list/) and [compute FAQ](https://www.oracle.com/cloud/compute/faq/). Do not equate a stopped VM with a zero bill: disks, backups and reserved/static IP resources can continue billing.
+
+## Egress-only example: 1,000 GB delivered in one month
+
+This isolates **internet response traffic from one EU VM to European users**, without a CDN, load balancer, taxes, discounts or other usage consuming the free allowance. It excludes the VM, disk, backup, IP, support and operations, so the amounts below are **not total hosting prices**. Azure and AWS tariff units are GB; Google tariff units are GiB. For Google, 1,000 GB decimal is 931.323 GiB. The Google Premium and Standard paths have different network routing and must be evaluated separately.
+
+| Meter | AWS Frankfurt | Azure Europe Premium | Google Premium to Europe | Google Standard | OCI European origin |
+| --- | --- | --- | --- | --- | --- |
+| Free / first paid rate | 100 GB account-wide / **$0.09 per GB** | 100 GB / **$0.087 per GB** | 1 GiB / **$0.12 per GiB** | 200 GiB / **$0.085 per GiB** | 10 TB / above-allowance rate varies |
+| Charge for 1,000 GB | **$81.00** (900 GB paid) | **$78.30** (900 GB paid) | **$111.64** (930.323 GiB paid) | **$62.16** (731.323 GiB paid) | **$0.00** (within allowance) |
+
+Sources for this calculation: [AWS public Frankfurt AWSDataTransfer price list](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/eu-central-1/index.json), SKU `F62Y6TKR8NC6Q2ZB`, published 16 September 2026, plus the [AWS 100 GB allowance](https://aws.amazon.com/ec2/pricing/on-demand/); [Azure Europe bandwidth tariff](https://azure.microsoft.com/en-us/pricing/details/bandwidth/); [Google Premium and Standard tariffs](https://cloud.google.com/vpc/network-pricing); and the [OCI networking tariff](https://www.oracle.com/cloud/price-list/). The AWS price-list SKU is a machine-readable official feed; its current-version URL can change. All amounts are USD and rounded to cents.
+
+The example makes the traffic effect visible: OCI's published allowance can remove this particular egress line, while Google Premium can make it larger than the same illustrative Azure/AWS transfer. It **does not establish that OCI has the cheapest full MyScoutee deployment**. VM performance, persistent storage, snapshots, public IP, taxes, support, availability and team familiarity still have to be priced and tested. The Oracle option is less familiar in the current MyScoutee evidence base, so a bounded x86 Compose and restore pilot would be needed before assigning operational savings.
+
+## Quote and decision rule
+
+For each provider, save a dated regional quote with the selected VM SKU, CPU architecture, disk type/size/performance, backup retention, public IP lifecycle, 1,000 GB traffic path, any DNS/edge choices and support tier. Use the same measured MyScoutee load and recovery target. Compare the full monthly total and a growth case (for example 3,000 GB and doubled storage), then add migration and operations effort separately. Do not count promotional credits or an interruptible/spot VM as a production baseline unless the workload can tolerate their terms.
